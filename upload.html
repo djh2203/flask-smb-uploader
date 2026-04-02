@@ -2,47 +2,140 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>NAS 文件管理</title>
+    <title>NAS 文件管理 + 上传</title>
   </head>
   <body>
     <h2>NAS 文件管理</h2>
 
-    <!-- NAS 状态 -->
+    <!-- NAS 状态显示区域 -->
     <div>
       <strong>NAS 状态：</strong>
       <span id="nasStatus">检测中...</span>
     </div>
     <hr />
 
-    <!-- 当前路径 -->
+    <!-- 上传表单 -->
     <div>
-      <strong>当前路径：</strong>
-      <span id="currentPath">/</span>
-      <button id="homeBtn">返回根目录</button>
-      <button id="parentBtn" disabled>返回上级</button>
+      <h3>上传文件</h3>
+      <input type="file" id="fileInput" />
+      <button id="uploadBtn">上传</button>
+      <div style="margin-top: 10px">
+        <progress
+          id="uploadProgress"
+          value="0"
+          max="100"
+          style="width: 300px"
+        ></progress>
+        <span id="progressPercent">0%</span>
+      </div>
+      <div id="uploadResult" style="margin-top: 10px"></div>
     </div>
     <hr />
 
-    <!-- 文件列表表格 -->
-    <table border="1" style="border-collapse: collapse; width: 100%">
-      <thead>
-        <tr>
-          <th>名称</th>
-          <th>大小</th>
-          <th>修改时间</th>
-        </tr>
-      </thead>
-      <tbody id="fileListBody">
-        <tr>
-          <td colspan="3">加载中...</td>
-        </tr>
-      </tbody>
-    </table>
+    <!-- 文件管理区域 -->
+    <div>
+      <h3>文件列表</h3>
+      <div>
+        <strong>当前路径：</strong>
+        <span id="currentPath">/</span>
+        <button id="homeBtn">返回根目录</button>
+        <button id="parentBtn" disabled>返回上级</button>
+      </div>
+      <br />
+      <table border="1" style="border-collapse: collapse; width: 100%">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>大小</th>
+            <th>修改时间</th>
+          </tr>
+        </thead>
+        <tbody id="fileListBody">
+          <tr>
+            <td colspan="3">加载中...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <script>
-      let currentPath = "/"; // 当前路径，例如 / 或 /文件夹名
+      // ========== 1. 上传相关逻辑 ==========
+      const fileInput = document.getElementById("fileInput");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const uploadResultDiv = document.getElementById("uploadResult");
+      const uploadProgress = document.getElementById("uploadProgress");
+      const progressPercent = document.getElementById("progressPercent");
 
-      // 格式化文件大小
+      function uploadFile() {
+        const file = fileInput.files[0];
+        if (!file) {
+          uploadResultDiv.textContent = "请先选择一个文件。";
+          return;
+        }
+
+        uploadProgress.value = 0;
+        progressPercent.textContent = "0%";
+        uploadResultDiv.textContent = "";
+        uploadBtn.disabled = true;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/upload", true);
+
+        xhr.upload.onprogress = function (event) {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round(
+              (event.loaded / event.total) * 100,
+            );
+            uploadProgress.value = percentComplete;
+            progressPercent.textContent = percentComplete + "%";
+          }
+        };
+
+        xhr.onload = function () {
+          uploadBtn.disabled = false;
+          if (xhr.status === 200) {
+            uploadResultDiv.textContent = xhr.responseText;
+            // 上传成功后刷新当前目录的文件列表
+            loadList(currentPath);
+          } else {
+            uploadResultDiv.textContent = "上传失败：HTTP " + xhr.status;
+          }
+          uploadProgress.value = 100;
+          progressPercent.textContent = "100%";
+        };
+
+        xhr.onerror = function () {
+          uploadBtn.disabled = false;
+          uploadResultDiv.textContent = "上传失败：网络错误";
+        };
+
+        xhr.send(formData);
+      }
+
+      uploadBtn.addEventListener("click", uploadFile);
+
+      // ========== 2. NAS 连通性检测 ==========
+      async function checkNAS() {
+        try {
+          const response = await fetch("/check_nas");
+          const data = await response.json();
+          const nasSpan = document.getElementById("nasStatus");
+          if (data.status === "ok") {
+            nasSpan.textContent = "✅ 可访问 (" + data.message + ")";
+          } else {
+            nasSpan.textContent = "❌ 不可访问 (" + data.message + ")";
+          }
+        } catch (error) {
+          document.getElementById("nasStatus").textContent = "❌ 检测失败";
+        }
+      }
+
+      // ========== 3. 文件列表管理 ==========
+      let currentPath = "/";
+
       function formatSize(bytes) {
         if (bytes === 0) return "0 B";
         const k = 1024;
@@ -51,23 +144,16 @@
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
       }
 
-      // 更新 NAS 状态（复用之前的接口）
-      async function checkNAS() {
-        try {
-          const response = await fetch("/check_nas");
-          const data = await response.json();
-          const span = document.getElementById("nasStatus");
-          if (data.status === "ok") {
-            span.textContent = "✅ 可访问 (" + data.message + ")";
-          } else {
-            span.textContent = "❌ 不可访问 (" + data.message + ")";
-          }
-        } catch (error) {
-          document.getElementById("nasStatus").textContent = "❌ 检测失败";
-        }
+      function escapeHtml(str) {
+        if (!str) return "";
+        return str.replace(/[&<>]/g, function (m) {
+          if (m === "&") return "&amp;";
+          if (m === "<") return "&lt;";
+          if (m === ">") return "&gt;";
+          return m;
+        });
       }
 
-      // 加载指定路径的文件列表
       async function loadList(path) {
         const tbody = document.getElementById("fileListBody");
         tbody.innerHTML = '<tr><td colspan="3">加载中...</td></tr>';
@@ -84,31 +170,28 @@
           }
           currentPath = data.path;
           document.getElementById("currentPath").innerText = currentPath;
-          // 更新上级按钮状态
           const parentBtn = document.getElementById("parentBtn");
           if (currentPath === "/") {
             parentBtn.disabled = true;
           } else {
             parentBtn.disabled = false;
           }
-          // 渲染文件列表
+
           if (data.items.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3">空目录</td></tr>';
             return;
           }
+
           let html = "";
           for (const item of data.items) {
             const name = item.name;
             const isDir = item.is_dir;
             const size = isDir ? "-" : formatSize(item.size);
             const mtime = item.mtime || "-";
-            // 点击名称：目录则进入，文件则下载（通过 /download 接口，需要后端支持）
             let action = "";
             if (isDir) {
-              // 进入文件夹
               action = `onclick="enterFolder('${encodeURIComponent(name)}')" style="cursor:pointer;color:blue;text-decoration:underline;"`;
             } else {
-              // 下载文件：先调用 /download?path=当前路径/文件名，需要后端实现
               action = `onclick="downloadFile('${encodeURIComponent(name)}')" style="cursor:pointer;color:green;text-decoration:underline;"`;
             }
             html += `<tr>
@@ -123,18 +206,6 @@
         }
       }
 
-      // 简单防XSS
-      function escapeHtml(str) {
-        if (!str) return "";
-        return str.replace(/[&<>]/g, function (m) {
-          if (m === "&") return "&amp;";
-          if (m === "<") return "&lt;";
-          if (m === ">") return "&gt;";
-          return m;
-        });
-      }
-
-      // 进入文件夹
       window.enterFolder = function (folderName) {
         let newPath;
         if (currentPath === "/") {
@@ -145,20 +216,17 @@
         loadList(newPath);
       };
 
-      // 下载文件（临时实现，提示后端未实现）
       window.downloadFile = function (fileName) {
-        // 构建文件完整路径：currentPath + fileName，但注意 currentPath 以 / 开头
         let fullPath;
         if (currentPath === "/") {
           fullPath = "/" + fileName;
         } else {
           fullPath = currentPath + "/" + fileName;
         }
-        // 调用后端下载接口（需要后端实现 /download 路由）
+        // 需要后端实现 /download 接口
         window.location.href = "/download?path=" + encodeURIComponent(fullPath);
       };
 
-      // 返回上级
       function goParent() {
         if (currentPath === "/") return;
         let parentPath = currentPath.substring(0, currentPath.lastIndexOf("/"));
@@ -166,12 +234,11 @@
         loadList(parentPath);
       }
 
-      // 返回根目录
       function goHome() {
         loadList("/");
       }
 
-      // 初始化
+      // ========== 初始化 ==========
       function init() {
         checkNAS();
         setInterval(checkNAS, 30000);
