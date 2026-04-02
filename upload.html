@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>文件上传 - NAS</title>
+  </head>
+  <body>
+    <h2>文件上传到 NAS</h2>
+
+    <!-- NAS 状态显示区域 -->
+    <div>
+      <strong>NAS 状态：</strong>
+      <span id="nasStatus">检测中...</span>
+    </div>
+    <hr />
+
+    <!-- 上传表单 -->
+    <div>
+      <input type="file" id="fileInput" />
+      <button id="uploadBtn">上传</button>
+    </div>
+
+    <!-- 上传结果显示区域 -->
+    <div id="uploadResult" style="margin-top: 10px"></div>
+
+    <script>
+      // 获取 DOM 元素
+      const nasStatusSpan = document.getElementById("nasStatus");
+      const fileInput = document.getElementById("fileInput");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const uploadResultDiv = document.getElementById("uploadResult");
+
+      // 检测 NAS 连通性并更新页面显示
+      async function checkNAS() {
+        try {
+          const response = await fetch("/check_nas");
+          const data = await response.json();
+          if (data.status === "ok") {
+            nasStatusSpan.textContent = "✅ 可访问 (" + data.message + ")";
+          } else {
+            nasStatusSpan.textContent = "❌ 不可访问 (" + data.message + ")";
+          }
+        } catch (error) {
+          nasStatusSpan.textContent = "❌ 检测失败 (" + error.message + ")";
+        }
+      }
+
+      // 上传文件
+      async function uploadFile() {
+        const file = fileInput.files[0];
+        if (!file) {
+          uploadResultDiv.textContent = "请先选择一个文件。";
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        uploadResultDiv.textContent = "上传中...";
+        uploadBtn.disabled = true;
+
+        try {
+          const response = await fetch("/upload", {
+            method: "POST",
+            body: formData,
+          });
+          const resultText = await response.text();
+          uploadResultDiv.textContent = resultText;
+        } catch (error) {
+          uploadResultDiv.textContent = "上传失败：" + error.message;
+        } finally {
+          uploadBtn.disabled = false;
+        }
+      }
+
+      // 页面加载后立即检测一次，然后每 30 秒检测一次
+      checkNAS();
+      setInterval(checkNAS, 30000);
+
+      // 绑定上传按钮事件
+      uploadBtn.addEventListener("click", uploadFile);
+    </script>
+  </body>
+</html>
