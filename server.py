@@ -4,7 +4,7 @@
 文件上传服务 + NAS 连通性检测
 NAS: //192.168.0.7/xsh  用户名 xsh  密码 xsh88888888
 """
-
+from smb_list_parser import parse_smbclient_ls
 import os
 import tempfile
 import subprocess
@@ -96,7 +96,56 @@ def index():
     with open('upload.html', 'r', encoding='utf-8') as f:
         return f.read()
 
-
+@app.route('/api/list', methods=['GET'])
+def list_nas_directory():
+    # 获取路径参数，例如 ?path=文件夹/子文件夹
+    
+    req_path = request.args.get('path', '/')
+    # 清理路径：去除首尾空格和斜杠，空路径表示根目录
+    req_path = req_path.strip()
+    if req_path == '/' or req_path == '':
+        cd_path = '.'   # smbclient 中 . 表示共享根目录
+    else:
+        # 去掉开头的 /，保留相对路径
+        cd_path = req_path.lstrip('/')
+    if '..' in cd_path or cd_path.startswith('/'):
+        return jsonify({"status": "error", "message": "非法路径"}), 400
+    # 构建命令：进入目录后执行 ls
+    cmd = [
+        "smbclient", "//192.168.0.7/xsh",
+        "-U", "xsh%xsh88888888",
+        "-c", f'cd "{cd_path}"; ls'
+    ]
+    
+    try:
+        # 执行命令，捕获 stdout，忽略 stderr（权限警告等）
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            # 若 smbclient 返回非0，可能路径不存在或权限问题
+            return jsonify({
+                "status": "error",
+                "message": f"smbclient 错误 (code {result.returncode}): {result.stderr.strip()}"
+            }), 500
+        
+        # 调用解析函数，传入 stdout 文本
+        items = parse_smbclient_ls(result.stdout)
+        
+        # 返回 JSON
+        return jsonify({
+            "status": "ok",
+            "path": f"/{req_path}" if req_path and req_path != '/' else "/",
+            "items": items
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "error", "message": "连接超时"}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 @app.route('/upload', methods=['POST'])
 def upload():
     if 'file' not in request.files:
