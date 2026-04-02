@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>文件上传 - NAS</title>
+    <title>文件上传到 NAS</title>
   </head>
   <body>
     <h2>文件上传到 NAS</h2>
@@ -20,6 +20,17 @@
       <button id="uploadBtn">上传</button>
     </div>
 
+    <!-- 上传进度条 -->
+    <div style="margin-top: 10px">
+      <progress
+        id="uploadProgress"
+        value="0"
+        max="100"
+        style="width: 300px"
+      ></progress>
+      <span id="progressPercent">0%</span>
+    </div>
+
     <!-- 上传结果显示区域 -->
     <div id="uploadResult" style="margin-top: 10px"></div>
 
@@ -29,6 +40,8 @@
       const fileInput = document.getElementById("fileInput");
       const uploadBtn = document.getElementById("uploadBtn");
       const uploadResultDiv = document.getElementById("uploadResult");
+      const uploadProgress = document.getElementById("uploadProgress");
+      const progressPercent = document.getElementById("progressPercent");
 
       // 检测 NAS 连通性并更新页面显示
       async function checkNAS() {
@@ -45,32 +58,56 @@
         }
       }
 
-      // 上传文件
-      async function uploadFile() {
+      // 上传文件（带进度条）
+      function uploadFile() {
         const file = fileInput.files[0];
         if (!file) {
           uploadResultDiv.textContent = "请先选择一个文件。";
           return;
         }
 
+        // 重置进度条和结果
+        uploadProgress.value = 0;
+        progressPercent.textContent = "0%";
+        uploadResultDiv.textContent = "";
+        uploadBtn.disabled = true;
+
         const formData = new FormData();
         formData.append("file", file);
 
-        uploadResultDiv.textContent = "上传中...";
-        uploadBtn.disabled = true;
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/upload", true);
 
-        try {
-          const response = await fetch("/upload", {
-            method: "POST",
-            body: formData,
-          });
-          const resultText = await response.text();
-          uploadResultDiv.textContent = resultText;
-        } catch (error) {
-          uploadResultDiv.textContent = "上传失败：" + error.message;
-        } finally {
+        // 监听上传进度
+        xhr.upload.onprogress = function (event) {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round(
+              (event.loaded / event.total) * 100,
+            );
+            uploadProgress.value = percentComplete;
+            progressPercent.textContent = percentComplete + "%";
+          }
+        };
+
+        // 监听请求完成
+        xhr.onload = function () {
           uploadBtn.disabled = false;
-        }
+          if (xhr.status === 200) {
+            uploadResultDiv.textContent = xhr.responseText;
+          } else {
+            uploadResultDiv.textContent = "上传失败：HTTP " + xhr.status;
+          }
+          // 上传完成后保持进度条 100%（可选）
+          uploadProgress.value = 100;
+          progressPercent.textContent = "100%";
+        };
+
+        xhr.onerror = function () {
+          uploadBtn.disabled = false;
+          uploadResultDiv.textContent = "上传失败：网络错误";
+        };
+
+        xhr.send(formData);
       }
 
       // 页面加载后立即检测一次，然后每 30 秒检测一次
