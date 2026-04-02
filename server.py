@@ -23,6 +23,9 @@ _nas_status_cache = {
 }
 CACHE_TTL = 10            # 缓存有效期 10 秒
 
+
+
+
 def check_nas_connectivity():
     """
     检测 NAS Samba 共享是否可访问。
@@ -93,40 +96,52 @@ def index():
     with open('upload.html', 'r', encoding='utf-8') as f:
         return f.read()
 
+
 @app.route('/upload', methods=['POST'])
 def upload():
     if 'file' not in request.files:
         return "没有文件"
     file = request.files['file']
-    if file.filename is None or file.filename == '':
+    if not file.filename:
         return "文件名为空"
-
-    # 安全处理文件名
+    
     safe_filename = secure_filename(file.filename)
-    # 加上随机前缀防止冲突
     unique_id = uuid.uuid4().hex[:8]
     temp_filename = f"{unique_id}_{safe_filename}"
     temp_path = os.path.join(tempfile.gettempdir(), temp_filename)
-
-    file.save(temp_path)
-
-    cmd = [
-        "smbclient", "//192.168.0.7/xsh",
-        "-U", "xsh%xsh88888888",
-        "-c", f"put {temp_path} {safe_filename}"
-    ]
+    
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0:
-            return f"上传成功！文件：{safe_filename}<br>{result.stdout}"
+        file.save(temp_path)
+        
+        # 上传到 NAS
+        cmd_put = [
+            "smbclient", "//192.168.0.7/xsh",
+            "-U", "xsh%xsh88888888",
+            "-c", f"put {temp_path} {safe_filename}"
+        ]
+        result = subprocess.run(cmd_put, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode != 0:
+            return f"上传失败（smbclient 错误）：{result.stderr}"
+        
+        # 可选：快速检查文件是否存在（不检查大小）
+        cmd_check = [
+            "smbclient", "//192.168.0.7/xsh",
+            "-U", "xsh%xsh88888888",
+            "-c", f"ls {safe_filename}"
+        ]
+        check_result = subprocess.run(cmd_check, capture_output=True, text=True, timeout=5)
+        if check_result.returncode == 0 and safe_filename in check_result.stdout:
+            return f"上传成功！文件：{safe_filename} 已保存到 NAS。"
         else:
-            return f"上传失败：{result.stderr}"
+            # 虽然 put 返回成功，但 ls 找不到文件（极少发生），提示用户手动确认
+            return f"上传命令执行成功，但无法确认文件是否存在，请手动检查 NAS 共享。文件：{safe_filename}"
+            
     except Exception as e:
-        return f"执行错误：{str(e)}"
+        return f"上传过程出错：{str(e)}"
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
 if __name__ == '__main__':
     # 确保 upload.html 存在，如果不存在则创建默认内容（可选）
     if not os.path.exists('upload.html'):
