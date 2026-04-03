@@ -6,8 +6,8 @@ import subprocess
 import uuid
 import time
 import json
+import re
 from flask import Flask, request, jsonify, send_file, after_this_request
-from werkzeug.utils import secure_filename
 from smb_list_parser import parse_smbclient_ls
 
 # ---------- 加载配置 ----------
@@ -31,6 +31,18 @@ _nas_status_cache = {
     "status": None,
     "message": None
 }
+
+def sanitize_filename(filename):
+    """
+    保留中文字符、字母、数字、点、下划线、横线，过滤掉路径分隔符等危险字符。
+    """
+    # 替换路径分隔符
+    filename = filename.replace('/', '_').replace('\\', '_')
+    # 允许：字母、数字、下划线、空格、点、横线、基本汉字（\u4e00-\u9fff）
+    filename = re.sub(r'[^\w\s\u4e00-\u9fff\-\.]', '', filename, flags=re.UNICODE)
+    if not filename:
+        filename = 'unnamed'
+    return filename
 
 def check_nas_connectivity():
     """
@@ -141,9 +153,9 @@ def upload():
     if not file.filename:
         return "文件名为空"
     
-    safe_filename = secure_filename(file.filename)
+    safe_name = sanitize_filename(file.filename)
     unique_id = uuid.uuid4().hex[:8]
-    temp_filename = f"{unique_id}_{safe_filename}"
+    temp_filename = f"{unique_id}_{safe_name}"
     temp_path = os.path.join(tempfile.gettempdir(), temp_filename)
     
     try:
@@ -152,7 +164,7 @@ def upload():
         cmd_put = [
             "smbclient", f"//{NAS_CONFIG['ip']}/{NAS_CONFIG['share']}",
             "-U", f"{NAS_CONFIG['username']}%{NAS_CONFIG['password']}",
-            "-c", f"put {temp_path} {safe_filename}"
+            "-c", f"put {temp_path} {safe_name}"
         ]
         result = subprocess.run(cmd_put, capture_output=True, text=True, timeout=60)
         
@@ -163,13 +175,13 @@ def upload():
         cmd_check = [
             "smbclient", f"//{NAS_CONFIG['ip']}/{NAS_CONFIG['share']}",
             "-U", f"{NAS_CONFIG['username']}%{NAS_CONFIG['password']}",
-            "-c", f'ls "{safe_filename}"'   # 添加双引号
+            "-c", f'ls "{safe_name}"'   # 添加双引号
         ]
         check_result = subprocess.run(cmd_check, capture_output=True, text=True, timeout=5)
-        if check_result.returncode == 0 and safe_filename in check_result.stdout:
-            return f"上传成功！文件：{safe_filename} 已保存到 NAS。"
+        if check_result.returncode == 0 and safe_name in check_result.stdout:
+            return f"上传成功！文件：{safe_name} 已保存到 NAS。"
         else:
-            return f"上传命令执行成功，但无法确认文件是否存在，请手动检查 NAS 共享。文件：{safe_filename}"
+            return f"上传命令执行成功，但无法确认文件是否存在，请手动检查 NAS 共享。文件：{safe_name}"
     except Exception as e:
         return f"上传过程出错：{str(e)}"
     finally:
