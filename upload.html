@@ -190,7 +190,7 @@
             const mtime = item.mtime || "-";
             let action = "";
             if (isDir) {
-              action = `onclick="enterFolder('${encodeURIComponent(name)}')" style="cursor:pointer;color:blue;text-decoration:underline;"`;
+              action = `onclick="enterFolder('${name.replace(/'/g, "\\'")}')" style="cursor:pointer;color:blue;text-decoration:underline;"`;
             } else {
               action = `onclick="downloadFile('${encodeURIComponent(name)}')" style="cursor:pointer;color:green;text-decoration:underline;"`;
             }
