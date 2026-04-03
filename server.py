@@ -9,6 +9,7 @@ import json
 import re
 from flask import Flask, request, jsonify, send_file, after_this_request
 from smb_list_parser import parse_smbclient_ls
+from file_validator import validate_upload, load_rules
 
 # ---------- 加载配置 ----------
 CONFIG_FILE = "config.json"
@@ -145,6 +146,7 @@ def list_nas_directory():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ---------- 上传文件 ----------
+RULES = load_rules() 
 @app.route('/upload', methods=['POST'])
 def upload():
     if 'file' not in request.files:
@@ -152,6 +154,9 @@ def upload():
     file = request.files['file']
     if not file.filename:
         return "文件名为空"
+    valid, err_msg = validate_upload(file, NAS_CONFIG, RULES)
+    if not valid:
+        return err_msg
     
     safe_name = sanitize_filename(file.filename)
     unique_id = uuid.uuid4().hex[:8]
