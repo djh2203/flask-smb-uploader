@@ -1,0 +1,9 @@
+{
+    "nas": {
+        "ip": "192.168.0.7",
+        "share": "xsh",
+        "username": "xsh",
+        "password": "xsh88888888"
+    },
+    "cache_ttl": 10
+}
