@@ -38,8 +38,8 @@ def sanitize_filename(filename):
     """
     # 替换路径分隔符
     filename = filename.replace('/', '_').replace('\\', '_')
-    # 允许：字母、数字、下划线、空格、点、横线、基本汉字（\u4e00-\u9fff）
-    filename = re.sub(r'[^\w\s\u4e00-\u9fff\-\.]', '', filename, flags=re.UNICODE)
+    # 允许：字母数字、中文、空格、点、横线、下划线、括号、@ # % ^ * ? [ ] { } , : = +
+    filename = re.sub(r'[^\w\s\u4e00-\u9fff\-\.\(\)@#%^*?\[\]{}:,=+]', '', filename, flags=re.UNICODE)
     if not filename:
         filename = 'unnamed'
     return filename
